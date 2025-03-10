@@ -1,4 +1,4 @@
-use yrock::YRock;
+use yrocks::YRock;
 use yrs::{Doc, GetString, Text, Transact, Update, updates::decoder::Decode};
 
 #[test]
@@ -14,11 +14,7 @@ fn update_encoding() {
         let len = text.len(&trx);
         text.insert(&mut trx, len, "def");
 
-        let upd = trx.encode_update_v1();
-
-        trx.commit();
-
-        upd
+        trx.encode_update_v1()
     };
 
     let new_doc = Doc::new();
@@ -27,8 +23,6 @@ fn update_encoding() {
         let mut trx = new_doc.transact_mut();
 
         trx.apply_update(Update::decode_v1(&upd).unwrap()).unwrap();
-
-        trx.commit();
     }
 
     let text = new_doc.get_or_insert_text("test");
