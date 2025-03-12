@@ -2,7 +2,11 @@ use std::path::PathBuf;
 
 use rocksdb::{DB, MergeOperands, Options};
 use yrs::{
-    updates::{decoder::Decode, encoder::{Encode, Encoder, EncoderV1}}, Transact, Update
+    Transact, Update,
+    updates::{
+        decoder::Decode,
+        encoder::{Encode, Encoder, EncoderV1},
+    },
 };
 
 pub struct YRock {
@@ -15,7 +19,6 @@ fn reencode_merge(_: &[u8], prev: Option<&[u8]>, op: &MergeOperands) -> Option<V
     } else {
         Update::new()
     };
-    
 
     for op in op {
         let next_update = Update::decode_v1(op).ok()?;
@@ -56,6 +59,6 @@ impl YRock {
     }
 
     pub fn store_update(&self, key: &[u8], update: Update) -> Result<(), rocksdb::Error> {
-        self.inner.merge(key, &update.encode_v1())
+        self.inner.merge(key, update.encode_v1())
     }
 }
