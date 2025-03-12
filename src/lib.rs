@@ -1,12 +1,9 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use rocksdb::{DB, MergeOperands, Options};
 use yrs::{
-    Transact, Update,
-    updates::{
-        decoder::Decode,
-        encoder::{Encode, Encoder, EncoderV1},
-    },
+    Transact, Update, merge_updates_v1,
+    updates::{decoder::Decode, encoder::Encode},
 };
 
 pub struct YRock {
@@ -14,26 +11,13 @@ pub struct YRock {
 }
 
 fn reencode_merge(_: &[u8], prev: Option<&[u8]>, op: &MergeOperands) -> Option<Vec<u8>> {
-    let mut update = if let Some(prev) = prev {
-        Update::decode_v1(prev).ok()?
-    } else {
-        Update::new()
-    };
+    let iter = prev.into_iter().chain(op.into_iter());
 
-    for op in op {
-        let next_update = Update::decode_v1(op).ok()?;
-
-        update.merge(next_update);
-    }
-
-    let mut encoder = EncoderV1::new();
-    update.encode(&mut encoder);
-
-    Some(encoder.to_vec())
+    merge_updates_v1(iter).ok()
 }
 
 impl YRock {
-    pub fn new(mut option: Options, path: &PathBuf) -> Result<Self, rocksdb::Error> {
+    pub fn new(mut option: Options, path: impl AsRef<Path>) -> Result<Self, rocksdb::Error> {
         option.set_merge_operator_associative("yjs_update_merge", reencode_merge);
 
         let db = DB::open(&option, path)?;
@@ -60,5 +44,9 @@ impl YRock {
 
     pub fn store_update(&self, key: &[u8], update: Update) -> Result<(), rocksdb::Error> {
         self.inner.merge(key, update.encode_v1())
+    }
+
+    pub fn store_encoded(&self, key: &[u8], bin: &[u8]) -> Result<(), rocksdb::Error> {
+        self.inner.merge(key, bin)
     }
 }
