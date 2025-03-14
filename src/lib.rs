@@ -2,12 +2,20 @@ use std::path::Path;
 
 use rocksdb::{DB, MergeOperands, Options};
 use yrs::{
-    Transact, Update, merge_updates_v1,
+    Doc, ReadTxn, StateVector, Transact, Update, merge_updates_v1,
     updates::{decoder::Decode, encoder::Encode},
 };
 
-pub struct YRock {
+pub struct YRocks {
     inner: DB,
+}
+
+fn partial_merge(key: &[u8], prev: Option<&[u8]>, op: &MergeOperands) -> Option<Vec<u8>> {
+    if op.len() < 256 {
+        return None;
+    }
+
+    reencode_merge(key, prev, op)
 }
 
 fn reencode_merge(_: &[u8], prev: Option<&[u8]>, op: &MergeOperands) -> Option<Vec<u8>> {
@@ -16,9 +24,9 @@ fn reencode_merge(_: &[u8], prev: Option<&[u8]>, op: &MergeOperands) -> Option<V
     merge_updates_v1(iter).ok()
 }
 
-impl YRock {
+impl YRocks {
     pub fn new(mut option: Options, path: impl AsRef<Path>) -> Result<Self, rocksdb::Error> {
-        option.set_merge_operator_associative("yjs_update_merge", reencode_merge);
+        option.set_merge_operator("yjs_update_merge", reencode_merge, partial_merge);
 
         let db = DB::open(&option, path)?;
         Ok(Self { inner: db })
@@ -35,11 +43,20 @@ impl YRock {
 
         let doc = yrs::Doc::new();
 
-        let mut trx = doc.transact_mut();
-        trx.apply_update(update).expect("invalid stored data");
-        drop(trx);
+        {
+            let mut trx = doc.transact_mut();
+            trx.apply_update(update).expect("invalid stored data");
+        }
 
         Ok(Some(doc))
+    }
+
+    pub fn set(&self, key: &[u8], doc: &Doc) -> Result<(), rocksdb::Error> {
+        let update = doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+
+        self.inner.put(key, update)
     }
 
     pub fn store_update(&self, key: &[u8], update: Update) -> Result<(), rocksdb::Error> {
